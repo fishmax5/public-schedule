@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regular Programs</title>
+<script>
+  var PUBLIC_SPANS = {"0":"all","7":"week","31":"month","week":"week","weekly":"week","this-week":"week","month":"month","monthly":"month","this-month":"month","all":"all","everything":"all","full":"all"};
+  var PUBLIC_QUERY_MAX = 100;
+  function publicStaticParams() {
+    var sp = null;
+    try { sp = new URLSearchParams(window.location.search); } catch (err) { sp = null; }
+    function get(name) { var v = sp ? sp.get(name) : null; return v === null ? '' : String(v); }
+    var out = { embed: false, location: '', span: '', query: '' };
+    if (!sp) return out;
+    if (sp.has('embed')) {
+      var e = get('embed').trim().toLowerCase();
+      out.embed = e !== 'no' && e !== 'false' && e !== '0';
+    }
+    out.location = (get('building') || get('location') || get('loc')).trim();
+    var asked = (get('span') || get('range')).trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(PUBLIC_SPANS, asked)) out.span = PUBLIC_SPANS[asked];
+    out.query = get('q').replace(/\s+/g, ' ').trim().slice(0, PUBLIC_QUERY_MAX).trim();
+    return out;
+  }
+  try {
+    if (publicStaticParams().embed) document.documentElement.className += ' is-embed';
+  } catch (err) { /* the page is drawn unframed */ }
+  window.__scheduleFetch = null;
+  try {
+    if (window.fetch) {
+      window.__scheduleFetch = window.fetch("regular.json", { credentials: 'omit' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      window.__scheduleFetch.catch(function () { /* the loader decides what a failure means */ });
+    }
+  } catch (err) { window.__scheduleFetch = null; }
+</script>
+</head>
+<body>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* A stranger on a phone, in a hurry, possibly at arm's length: everything
+     here is sized for reading standing up, and every tap target is a thumb. */
+  :root {
+    --ink: #16181A; --muted: #56605C; --line: #D5DDD3; --card: #FFFFFF;
+    --page: #F4F7F2; --brand: #101010; --brand-ink: #FFFFFF;
+    --open: #2F7A46; --open-bg: #E4F1E1; --warn: #7A5300; --warn-bg: #FBEBC6;
+    --quiet: #4A5250; --quiet-bg: #EFF2ED;
+    /* The website's own two colours, doing a job: which building this is. */
+    --loc-green: #C9E1B5; --loc-green-ink: #22521C;
+    --loc-yellow: #F5CE63; --loc-yellow-ink: #5C4200;
+    --shadow: 0 1px 2px rgba(20,30,20,.05), 0 2px 8px rgba(20,30,20,.06);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* TRANSPARENT ON PURPOSE — the website's own section color is the page. */
+  body { margin: 0; background: transparent; color: var(--ink);
+         font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+         font-size: 16px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+  /* THIS IS READ LANDSCAPE AS OFTEN AS PORTRAIT — it is a block on a website
+     opened on a laptop, and a phone turned sideways at the door. So the page
+     takes the width it is given rather than a column down the middle of it:
+     three tiles a row on a wide screen, seven weekday columns on the regular
+     programs page, and the same page folded to one column on a phone. */
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px 64px 16px; }
+
+  /* WHO THIS IS. Sized like a masthead rather than a page title, because for
+     somebody who followed a forwarded link it is the first question. */
+  header { padding: 26px 0 14px 0; }
+  header .eyebrow { margin: 0 0 4px 0; color: var(--muted); font-size: 13px;
+                    font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  header h1 { margin: 0; font-size: 32px; line-height: 1.1; letter-spacing: -.022em; font-weight: 700; }
+  header p.blurb { margin: 8px 0 0 0; color: var(--ink); font-size: 16px; max-width: 62ch; }
+  header p.lines { margin: 10px 0 0 0; color: var(--ink); font-size: 14px; }
+  header p.lines a { color: var(--ink); text-decoration: underline; font-weight: 600; }
+  header p.places { margin: 4px 0 0 0; color: var(--muted); font-size: 13px; }
+
+  /* THE CONTROL BAR IS A CARD, NOT A LINE. It was transparent controls on a
+     transparent page, which on a colored website block came out as a row
+     nobody could see. It paints itself, keeps a border, and stays put while
+     the list scrolls under it. */
+  .controls { position: sticky; top: 0; z-index: 4; background: var(--card);
+              border: 1px solid var(--line); border-radius: var(--radius);
+              padding: 10px; margin: 4px 0 2px 0; box-shadow: var(--shadow); }
+  .seg { display: flex; gap: 6px; background: var(--quiet-bg); border-radius: 999px; padding: 4px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--quiet); font-size: 14px;
+                font-weight: 600; padding: 10px 8px; border-radius: 999px; cursor: pointer;
+                font-family: inherit; transition: background .12s ease, color .12s ease; }
+  .seg button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+
+  /* THE BUILDING IS A ROW OF PILLS, NOT A DROPDOWN. Which building a program
+     is in is the second question every caller asks, and a <select> hides the
+     answer until it is opened. Pills say both things at once: which buildings
+     have anything on, and which one is being shown. */
+  .locbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .locbar button { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+                   font: inherit; font-size: 14px; font-weight: 600; padding: 8px 14px;
+                   border-radius: 999px; cursor: pointer; display: inline-flex;
+                   align-items: center; gap: 6px; }
+  .locbar button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink);
+                                        border-color: var(--brand); }
+  .locbar button .pin { font-size: 10px; opacity: .75; }
+
+  .row2 { display: flex; gap: 8px; margin-top: 8px; }
+  .row2 input { flex: 1; min-width: 0; font-family: inherit; font-size: 15px;
+        padding: 11px 14px; border: 1px solid var(--line); border-radius: 999px;
+        background: var(--card); color: var(--ink); }
+  /* THE LINE THAT SAYS HOW MUCH YOU ARE LOOKING AT, and it is readable now:
+     the count is ink rather than a grey that only worked on a white page, and
+     Refresh is an outlined pill rather than blue text on nothing. */
+  .count { color: var(--ink); font-size: 13px; font-weight: 500; margin-top: 10px;
+           display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .count button { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+                  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+                  padding: 6px 14px; border-radius: 999px; }
+
+  /* TWO TILES A ROW, one on a phone — and anything that is not a tile (the
+     lunch pin, an empty state, a failed read) spans the whole width.
+     Stretched, not top-aligned: two tiles side by side with different
+     numbers of dates on them read as a ragged edge otherwise. */
+  #list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px; margin-top: 16px; }
+  #list > .full { grid-column: 1 / -1; }
+  @media (min-width: 1100px) { #list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { #list { grid-template-columns: 1fr; } }
+
+  /* THE WEEK, AS COLUMNS. One column per weekday that has anything on, each
+     one a stack of tiles under its own heading — which is how a week is read
+     when the question is "what is on Tuesdays", and what makes the page work
+     landscape: seven narrow columns across a laptop, folding to two on a
+     tablet and one on a phone. auto-fit rather than repeat(7) so a centre
+     that runs nothing on Sundays does not print an empty column. */
+  #list.week { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+               align-items: start; gap: 14px; }
+  @media (min-width: 1100px) { #list.week { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); } }
+  @media (max-width: 640px) { #list.week { grid-template-columns: 1fr; } }
+  .daycol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+  /* THE WEEKDAY HEADINGS on the regular-programs page: a black pill, so the
+     week reads as a week rather than as grey type on a colored block. */
+  h2.day { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .08em;
+           text-transform: uppercase; }
+  h2.day span { background: var(--brand); color: var(--brand-ink); border-radius: 999px;
+                padding: 7px 14px; display: block; text-align: center; }
+
+  /* ONE PROGRAM, ONE TILE, AND THE WHOLE TILE IS THE BUTTON. */
+  .prog { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 14px 16px 13px 16px; box-shadow: var(--shadow); cursor: pointer;
+          transition: transform .08s ease, border-color .12s ease, box-shadow .12s ease; }
+  .prog:hover { border-color: var(--brand); }
+  .prog:active { transform: scale(.992); }
+  .prog:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .prog.flat { cursor: default; }
+  .prog.flat:hover { border-color: var(--line); }
+  .prog.flat:active { transform: none; }
+  .prog.opening { opacity: .6; }
+  /* THE BUILDING'S COLOUR, DOWN THE EDGE OF THE TILE. The chip says it in
+     words; the stripe is what a person scanning a screen of tiles actually
+     sees, before they have read anything. */
+  .prog.loc-green { border-left: 7px solid var(--loc-green); }
+  .prog.loc-yellow { border-left: 7px solid var(--loc-yellow); }
+  .prog .head { display: flex; gap: 10px; align-items: center; }
+  .prog .name { font-size: 18px; font-weight: 600; letter-spacing: -.01em; flex: 1; min-width: 0; }
+  /* NO "SIGN UP" BUTTON. The whole tile is already the button, and a pill
+     inside a button is a second thing to aim at that does the same thing —
+     on a tile in a narrow weekday column it was also the widest thing on it.
+     What is left in this slot is the states that are NOT an invitation: a
+     sentence, quietly, because they are the answers a tap cannot give. */
+  .prog .cta { flex: 0 0 auto; font-size: 13px; font-weight: 500; white-space: nowrap;
+               color: var(--muted); }
+  .prog .cta.warn { background: var(--warn-bg); color: var(--warn); font-weight: 600;
+                    border-radius: 999px; padding: 5px 12px; }
+  .prog .when { color: var(--muted); font-size: 14px; margin-top: 5px; }
+  .prog .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 9px; }
+  .tag { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+         background: var(--quiet-bg); color: var(--quiet); }
+  /* THE BUILDING, ON EVERY TILE, AND IT IS THE LOUDEST CHIP ON IT — filled
+     in that building's own colour (see PUBLIC_LOCATION_COLORS), a size up
+     from the tags beside it, and never grey unless the building is one this
+     file has no colour for. */
+  .tag.where { background: var(--card); color: var(--ink); border: 1px solid var(--brand);
+               font-weight: 700; font-size: 13px; padding: 5px 12px; letter-spacing: .01em; }
+  .tag.where.loc-green { background: var(--loc-green); color: var(--loc-green-ink);
+                         border-color: var(--loc-green); }
+  .tag.where.loc-yellow { background: var(--loc-yellow); color: var(--loc-yellow-ink);
+                          border-color: var(--loc-yellow); }
+  .tag.open { background: var(--open-bg); color: var(--open); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn); }
+
+  /* THE DATES ARE TAP TARGETS OF THEIR OWN. Each carries its own session's
+     form, which for a Regular program is a different form each month — the
+     whole reason a printed link goes stale and this page does not. */
+  .dates { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+  .chip { font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 999px;
+          border: 1px solid var(--line); background: var(--page); color: var(--ink);
+          text-decoration: none; font-variant-numeric: tabular-nums; display: inline-block;
+          transition: transform .08s ease, border-color .12s ease; }
+  a.chip:hover { border-color: var(--brand); }
+  a.chip:active { transform: scale(.97); }
+  .chip.today { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+  /* A FULL DATE IS AMBER, NOT ABSENT. It is still a date somebody may want —
+     the form behind it is the waiting list — so it is coloured rather than
+     hidden, and the tile says what the colour means when it has both. */
+  .chip.full { background: var(--warn-bg); border-color: var(--warn-bg); color: var(--warn); }
+  .chip.quiet { color: var(--muted); }
+  .chip.opening { opacity: .55; }
+  .chip.more { border-style: dashed; color: var(--muted); cursor: pointer; font-family: inherit; }
+  .legend { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .legend b { color: var(--warn); font-weight: 700; }
+
+  /* "Showing programs matching …" — present only while a search is active. */
+  .qbar { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 10px 14px; margin-top: 12px; font-size: 14px; display: none; }
+  .qbar a, .empty a { color: var(--ink); font-weight: 600; text-decoration: underline; cursor: pointer; }
+  .empty a { display: inline-block; margin-top: 10px; }
+  .empty { text-align: center; color: var(--muted); padding: 44px 20px; background: var(--card);
+           border: 1px solid var(--line); border-radius: var(--radius); }
+  .empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
+  .notice { background: var(--warn-bg); color: var(--warn); border-radius: var(--radius);
+            padding: 14px 16px; margin: 18px 0; font-size: 15px; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 30px;
+           line-height: 1.6; }
+</style>
+<style>
+  html.is-embed .wrap { padding: 0 2px 2px 2px; max-width: none; }
+  html.is-embed .controls { position: static; margin-top: 0; }
+  html.is-embed footer { margin-top: 18px; font-size: 12px; }
+  html.is-embed header { display: none; }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Every week</p>
+    <h1 id="orgName">Regular Programs</h1>
+    <p class="blurb" id="blurb">The programs that run every week. Tap one to sign up.</p>
+    <p class="lines" id="contact"></p>
+    <p class="places" id="places"></p>
+  </header>
+
+  <div class="controls">
+    <div class="locbar" id="locbar" role="group" aria-label="Location"></div>
+    <div class="row2">
+      <input type="search" id="q" placeholder="Search programs" autocomplete="off"
+             maxlength="100" oninput="onSearch()" aria-label="Search programs">
+    </div>
+    <div class="count">
+      <span id="count"></span>
+      <button type="button" onclick="refresh(true)" id="refresh">Refresh</button>
+    </div>
+  </div>
+
+  <div class="qbar" id="qbar" role="status"></div>
+
+  <div id="list" class="week"></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+  var STATIC_MODE = true;
+  var STATIC = JSON.parse("{\"dataUrl\":\"regular.json\",\"execUrl\":\"https://script.google.com/a/macros/newhorizonsseniorcenter.org/s/AKfycbzg1asWnU2aKfLOflWROcl59XvsM38QtlY7fb7TUhhMN_gsGSNIGwiJW3lfsifqINJt/exec?mode=regular\",\"staleMs\":43200000,\"timeoutMs\":8000}");
+  var PARAMS = publicStaticParams();
+  var DATA = null;
+  var LOADING = true;
+  var SPAN = PARAMS.span;
+  var EMBED = JSON.parse("{\"message\":\"programCalendarHeight.v1\",\"clearUrl\":\"https://lynx-heron-7t43.squarespace.com/programming\"}");
+  EMBED.embed = PARAMS.embed;
+  EMBED.location = '';
+  EMBED.query = PARAMS.query;
+  var PROGRAMS = (DATA && DATA.programs) || [];
+  var STORE_KEY = 'publicCalendarPrefs.v1';
+  // FOUR, not the calendar page's six: a tile here stands in a weekday
+  // column a fifth of the screen wide, and six chips in it is four rows of
+  // dates under a two-word title. The rest are one tap away.
+  var CHIP_LIMIT = 4;
+  var DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  var LOC_COLORS = JSON.parse("{\"ashbridge\":\"loc-green\",\"narberth\":\"loc-yellow\"}");
+
+  /** The class carrying this building's colour, or the neutral outline. */
+  function locClass(name) {
+    return LOC_COLORS[String(name || '').trim().toLowerCase()] || '';
+  }
+
+  // The building is shared with the calendar page's own storage on purpose:
+  // somebody who only ever comes to Narberth said so once, and both public
+  // pages are the same person's answer to the same question.
+  var view = { location: '', q: '' };
+  try {
+    var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || '{}');
+    if (saved && typeof saved.location === 'string') view.location = saved.location;
+  } catch (err) { /* private browsing, or nothing stored yet */ }
+  if (EMBED.location) view.location = EMBED.location;
+  // A search from the host site (?q=): prefilled into the box, never saved.
+  if (EMBED.query) {
+    view.q = EMBED.query;
+    document.getElementById('q').value = EMBED.query;
+  }
+
+  function save() {
+    // A PINNED PAGE REMEMBERS NOTHING — see the note in the calendar page: an
+    // embed's pin is the website author's setting, not the visitor's.
+    if (EMBED.location) return;
+    try {
+      window.localStorage.setItem(STORE_KEY, JSON.stringify({ location: view.location }));
+    } catch (err) { /* private browsing */ }
+  }
+
+  function todayKey() { return (DATA && DATA.todayKey) || ''; }
+
+  function keyPlusDays(key, days) {
+    var p = String(key).split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    d.setDate(d.getDate() + days);
+    var m = String(d.getMonth() + 1), day = String(d.getDate());
+    return d.getFullYear() + '-' + (m.length < 2 ? '0' + m : m) + '-' + (day.length < 2 ? '0' + day : day);
+  }
+
+  /** "Today" / "Tomorrow" for the two dates that earn a word instead of a date. */
+  function relativeDay(key) {
+    var t = todayKey();
+    if (!t) return '';
+    if (key === t) return 'Today';
+    if (key === keyPlusDays(t, 1)) return 'Tomorrow';
+    return '';
+  }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null && text !== '') node.textContent = text;
+    return node;
+  }
+
+  function tag(text, kind) {
+    return el('span', 'tag' + (kind ? ' ' + kind : ''), text);
+  }
+
+  function visible() {
+    var words = searchWords();
+    var out = [];
+    for (var i = 0; i < PROGRAMS.length; i++) {
+      var p = PROGRAMS[i];
+      if (view.location && p.location !== view.location) continue;
+      if (words.length && !matchesSearch(programHaystack(p), words)) continue;
+      out.push(p);
+    }
+    return out;
+  }
+
+  /**
+   * What a search looks at: title, building, the weekday (full and plural —
+   * "tuesday", "tuesdays") and the tags. Only fields the public snapshot
+   * already carries; leaders and descriptions are not in it.
+   */
+  function programHaystack(p) {
+    var parts = [p.title, p.location, p.weekday, p.weekday ? p.weekday + 's' : ''];
+    var sessions = p.sessions || [];
+    if (sessions.some(function (s) { return s.club; })) parts.push('club');
+    if (sessions.some(function (s) { return s.appointment; })) parts.push('by appointment appointment');
+    return parts.join(' ').toLowerCase();
+  }
+
+  /** A date somebody can still take a place on, as opposed to join a queue for. */
+  function isOpenSession(s) { return !!s.url && s.state !== 'waitlist'; }
+
+  /**
+   * The tile's words follow the FIRST DATE SOMEBODY CAN ACTUALLY HAVE, not
+   * the next one on the calendar — a class with four open weeks and one full
+   * one is a class they can come to, and saying "waiting list" because next
+   * Tuesday is full sends them away from something that was theirs.
+   */
+  function leadOf(sessions) {
+    for (var i = 0; i < sessions.length; i++) {
+      if (isOpenSession(sessions[i])) return sessions[i];
+    }
+    for (var j = 0; j < sessions.length; j++) {
+      if (sessions[j].url) return sessions[j];
+    }
+    return sessions[0];
+  }
+
+  /**
+   * WHAT THE TILE SAYS IN PLACE OF A BUTTON — nothing, for an ordinary open
+   * program: the whole tile is the button, and a pill inside it was a second
+   * target doing the same job, and the widest thing on a tile in a narrow
+   * weekday column. Only the states a tap cannot answer are left.
+   */
+  function ctaWords(lead, everyDateFull) {
+    if (everyDateFull) return 'Join the waiting list';
+    if (!lead) return '';
+    if (lead.state === 'none') return 'No sign-up needed';
+    if (lead.state === 'soon') return 'Sign-up opens soon';
+    if (lead.state === 'waitlist') return 'Join the waiting list';
+    return '';
+  }
+
+  /** One date: a link when it has a form behind it, a plain chip when not. */
+  function chipFor(s) {
+    var label = relativeDay(s.dateKey) || s.shortLabel || s.dayLabel;
+    var kind = s.state === 'waitlist' ? ' full'
+      : (s.dateKey === todayKey() ? ' today' : (s.url ? '' : ' quiet'));
+    if (!s.url) return el('span', 'chip' + kind, label);
+    var node = el('a', 'chip' + kind, label);
+    node.href = s.url;
+    node.target = '_blank';
+    node.rel = 'noopener';
+    node.title = s.dayLabel + (s.time ? ', ' + s.time : '')
+      + (s.state === 'waitlist' ? ' \u2014 full, the form joins the waiting list' : '');
+    node.addEventListener('click', function (event) {
+      event.stopPropagation();
+      node.classList.add('opening');
+      window.setTimeout(function () { node.classList.remove('opening'); }, 2500);
+    });
+    return node;
+  }
+
+  /**
+   * "9:30 AM – 10:30 AM · 8 dates through Nov 27" — and NOT the weekday,
+   * which is the column this tile is standing in. Repeating it on every tile
+   * would be the heading said again, once per program, down the page.
+   */
+  function scheduleLine(program) {
+    var sessions = program.sessions || [];
+    var parts = [];
+    if (program.time) parts.push(program.time);
+    if (sessions.length) {
+      var last = sessions[sessions.length - 1];
+      parts.push(sessions.length + ' dates through ' + (last.shortLabel || last.dayLabel));
+    }
+    return parts.join(' \u00b7 ');
+  }
+
+  function cardFor(program) {
+    var sessions = program.sessions || [];
+    var lead = leadOf(sessions);
+    var withForm = sessions.filter(function (s) { return !!s.url; });
+    var fullDates = sessions.filter(function (s) { return s.state === 'waitlist'; });
+    var everyDateFull = withForm.length > 0 && fullDates.length === withForm.length;
+
+    var colour = locClass(program.location);
+    var card = el('div', 'prog' + (colour ? ' ' + colour : ''));
+    var url = lead && lead.url ? lead.url : '';
+    if (url) {
+      // THE WHOLE RECTANGLE IS THE BUTTON — a div rather than an <a>, because
+      // the date chips inside it are links of their own and a browser will
+      // not honour an anchor nested in an anchor. Keyboard and screen readers
+      // get the same thing the mouse gets, by hand.
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+      var open = function () {
+        card.classList.add('opening');
+        window.setTimeout(function () { card.classList.remove('opening'); }, 2500);
+        window.open(url, '_blank', 'noopener');
+      };
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          open();
+        }
+      });
+    } else {
+      card.className += ' flat';
+    }
+
+    var head = el('div', 'head');
+    head.appendChild(el('div', 'name', program.title));
+    var words = ctaWords(lead, everyDateFull);
+    if (words) {
+      var kind = everyDateFull || (lead && lead.state === 'waitlist') ? 'warn' : '';
+      head.appendChild(el('span', 'cta' + (kind ? ' ' + kind : ''), words));
+    }
+    card.appendChild(head);
+    card.setAttribute('aria-label', program.title + (words ? ' \u2014 ' + words : ''));
+
+    card.appendChild(el('div', 'when', scheduleLine(program)));
+
+    var meta = el('div', 'meta');
+    if (program.location) {
+      meta.appendChild(tag(program.location, 'where' + (colour ? ' ' + colour : '')));
+    }
+    if (lead && lead.club) meta.appendChild(tag('Club'));
+    if (lead && lead.appointment) meta.appendChild(tag('By appointment'));
+    if (everyDateFull) meta.appendChild(tag('Every date full', 'warn'));
+    else if (lead && lead.seats) {
+      meta.appendChild(tag(lead.seats, lead.state === 'open' ? 'open' : 'warn'));
+    }
+    if (meta.childNodes.length) card.appendChild(meta);
+
+    var dates = el('div', 'dates');
+    var shown = sessions.slice(0, CHIP_LIMIT);
+    shown.forEach(function (s) { dates.appendChild(chipFor(s)); });
+    var rest = sessions.length - shown.length;
+    if (rest > 0) {
+      var more = el('button', 'chip more', '+' + rest + ' more');
+      more.type = 'button';
+      more.addEventListener('click', function (event) {
+        event.stopPropagation();
+        dates.removeChild(more);
+        sessions.slice(CHIP_LIMIT).forEach(function (s) { dates.appendChild(chipFor(s)); });
+        postHeight();
+      });
+      dates.appendChild(more);
+    }
+    card.appendChild(dates);
+    if (fullDates.length && !everyDateFull) {
+      var legend = el('div', 'legend');
+      legend.appendChild(el('b', '', 'Amber'));
+      legend.appendChild(document.createTextNode(
+        ' dates are full \u2014 that form joins the waiting list.'));
+      card.appendChild(legend);
+    }
+    return card;
+  }
+
+  function drawIntro() {
+    if (EMBED.embed) return;
+    var intro = (DATA && DATA.intro) || {};
+    if (intro.name) document.getElementById('orgName').textContent = intro.name;
+    var contact = document.getElementById('contact');
+    contact.textContent = '';
+    if (intro.phone) {
+      contact.appendChild(document.createTextNode('Questions, or rather sign up by phone? '));
+      var tel = el('a', '', intro.phone);
+      tel.href = 'tel:' + String(intro.phone).replace(/[^0-9+]/g, '');
+      contact.appendChild(tel);
+    }
+    if (intro.email) {
+      contact.appendChild(document.createTextNode(intro.phone ? '  \u00b7  ' : ''));
+      var mail = el('a', '', intro.email);
+      mail.href = 'mailto:' + intro.email;
+      contact.appendChild(mail);
+    }
+    document.getElementById('places').textContent =
+      (intro.places && intro.places.length) ? intro.places.join('   \u00b7   ') : '';
+  }
+
+  function draw() {
+    if (LOADING) { drawLoading(); return; }
+    var list = document.getElementById('list');
+    var rows = visible();
+
+    list.textContent = '';
+    if (!DATA || DATA.ok === false) {
+      list.appendChild(el('div', 'notice full', DATA && DATA.message
+        ? DATA.message
+        : 'We could not read the program calendar just now. Please try again shortly.'));
+    } else if (!rows.length && view.q.trim()) {
+      list.appendChild(noMatchBox());
+    } else if (!rows.length) {
+      var none = el('div', 'empty full');
+      none.appendChild(el('b', '', 'Nothing weekly here yet'));
+      none.appendChild(el('div', '', view.q || view.location
+        ? 'No weekly programs match that. Try clearing the search or the building.'
+        : 'Nothing in the next two months runs every week. Everything else is on the full calendar.'));
+      list.appendChild(none);
+    } else {
+      // ONE COLUMN PER WEEKDAY, in the order the server sorted them — Monday
+      // first, because that is how a person planning a week reads one, and a
+      // weekday with nothing on gets no column rather than an empty one.
+      var column = null, day = '';
+      rows.forEach(function (p) {
+        if (p.weekday !== day) {
+          day = p.weekday;
+          column = el('div', 'daycol');
+          var h = el('h2', 'day');
+          h.appendChild(el('span', '', 'Every ' + p.weekday));
+          column.appendChild(h);
+          list.appendChild(column);
+        }
+        column.appendChild(cardFor(p));
+      });
+    }
+
+    document.getElementById('count').textContent = rows.length
+      ? (rows.length === 1 ? '1 weekly program' : rows.length + ' weekly programs')
+      : '';
+    document.getElementById('foot').textContent = DATA && DATA.generatedAt
+      ? 'Updated ' + DATA.generatedAt + '. Seats are checked again when you open a form.'
+      : '';
+    drawSearchBar(rows.length);
+    postHeight();
+  }
+
+  function drawLocations() {
+    var bar = document.getElementById('locbar');
+    var locations = (DATA && DATA.locations) || [];
+    if (view.location && locations.indexOf(view.location) === -1) view.location = '';
+    bar.textContent = '';
+    if (EMBED.location || locations.length < 2) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    bar.appendChild(locationPill('', 'All locations'));
+    locations.forEach(function (name) { bar.appendChild(locationPill(name, name)); });
+  }
+
+  function locationPill(value, label) {
+    var button = el('button', '', '');
+    button.type = 'button';
+    if (value) button.appendChild(el('span', 'pin', '\u25CF'));
+    button.appendChild(document.createTextNode(label));
+    button.setAttribute('aria-pressed', view.location === value ? 'true' : 'false');
+    button.addEventListener('click', function () {
+      view.location = value; save(); drawLocations(); draw();
+    });
+    return button;
+  }
+
+  var searchTimer = null;
+  function onSearch() {
+    if (searchTimer) window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(function () {
+      view.q = document.getElementById('q').value;
+      draw();
+    }, 40);
+  }
+
+  /** The quiet re-read, on the same terms as the calendar page's. */
+  function refresh(force) {
+    if (STATIC_MODE) {
+      refreshStatic(force, function (res) {
+        PROGRAMS = res.programs || [];
+        drawLocations(); draw();
+      });
+      return;
+    }
+    var button = document.getElementById('refresh');
+    if (force) button.textContent = 'Refreshing\u2026';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        button.textContent = 'Refresh';
+        if (!res || res.ok === false) {
+          if (force) { DATA = res || DATA; draw(); }
+          return;
+        }
+        // Built ahead (99y): redraw only when the snapshot actually moved.
+        if (DATA && DATA.builtAt && res.builtAt === DATA.builtAt) return;
+        DATA = res;
+        PROGRAMS = res.programs || [];
+        redrawKeepingPlace(function () { drawLocations(); draw(); });
+      })
+      .withFailureHandler(function () {
+        // What is drawn is real, it is just a few minutes old; an error
+        // banner over a working page would be its own worst moment.
+        button.textContent = 'Refresh';
+      })
+      .getScheduleSnapshot(JSON.stringify({ mode: 'regular', fresh: !!force }));
+  }
+
+  // The frame's height — the whole of what an embed says to its host. See
+  // publicEmbedHeightScript (91): posted to window.top, tagged 'regular'.
+
+  var HEIGHT_MODE = "regular";
+  var lastHeight = 0;
+  var heightTimer = null;
+  function measureHeight() {
+    var wrap = document.querySelector('.wrap');
+    if (wrap) {
+      var rect = wrap.getBoundingClientRect();
+      return Math.ceil(rect.bottom + (window.pageYOffset || 0));
+    }
+    return document.documentElement ? document.documentElement.scrollHeight : 0;
+  }
+  function sendHeight() {
+    heightTimer = null;
+    if (!EMBED.embed || window.top === window) return;
+    var height = measureHeight();
+    if (!height || Math.abs(height - lastHeight) < 2) return;
+    lastHeight = height;
+    try {
+      window.top.postMessage({ type: EMBED.message, mode: HEIGHT_MODE, height: height }, '*');
+    } catch (err) { /* a host that will not be spoken to keeps its fixed height */ }
+  }
+  function postHeight() {
+    if (heightTimer) window.clearTimeout(heightTimer);
+    heightTimer = window.setTimeout(sendHeight, 100);
+  }
+  function watchHeight() {
+    if (!EMBED.embed) return;
+    sendHeight();
+    window.addEventListener('load', postHeight);
+    window.addEventListener('resize', postHeight);
+    var wrap = document.querySelector('.wrap');
+    if (window.ResizeObserver && wrap) {
+      new window.ResizeObserver(postHeight).observe(wrap);
+    } else {
+      window.setInterval(postHeight, 1000);
+    }
+  }
+  /**
+   * A background re-read that brought something new: redraw it without
+   * moving anybody. The filters, the search box and the building live in
+   * the page's view state and the input itself, so a redraw keeps them; the scroll is put back
+   * by hand because replacing the list can move it.
+   */
+  function redrawKeepingPlace(redraw) {
+    var x = window.pageXOffset || 0, y = window.pageYOffset || 0;
+    redraw();
+    try { window.scrollTo(x, y); } catch (err) { /* nothing to restore */ }
+  }
+
+  // Both sides are worn down the same way before comparing: case, accents,
+  // apostrophes and hyphens go ("t'ai chi" -> "tai chi", "Mah-Jongg" ->
+  // "mahjongg"), other punctuation and "&" become spaces / "and".
+  function foldSearchText(text) {
+    var t = String(text || '').toLowerCase();
+    try { t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (err) { /* old browser */ }
+    return t.replace(/&/g, ' and ')
+      .replace(/['\u2018\u2019\u02bc\-\u2010-\u2015]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  function searchWords() {
+    return foldSearchText(view.q).split(' ').filter(Boolean);
+  }
+  function matchesSearch(haystack, words) {
+    var hay = foldSearchText(haystack);
+    var compact = hay.replace(/ /g, '');
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (hay.indexOf(w) !== -1 || compact.indexOf(w) !== -1) continue;
+      // a plural the title does not use ("classes" -> "class", "games" -> "game")
+      if (w.length > 3 && w.slice(-1) === 's' && (hay.indexOf(w.slice(0, -1)) !== -1 ||
+          (w.slice(-2) === 'es' && hay.indexOf(w.slice(0, -2)) !== -1))) continue;
+      return false;
+    }
+    return true;
+  }
+  function clearSearchLink() {
+    var link = el('a', '', 'Clear search');
+    link.href = EMBED.clearUrl || '#';
+    link.target = '_top';
+    link.rel = 'noopener';
+    link.addEventListener('click', function (event) {
+      if (EMBED.query && view.q.trim() === EMBED.query) return; // reload the host page without ?q=
+      event.preventDefault();
+      EMBED.query = '';
+      view.q = '';
+      document.getElementById('q').value = '';
+      draw();
+    });
+    return link;
+  }
+  function drawSearchBar(resultCount) {
+    var bar = document.getElementById('qbar');
+    var term = String(view.q || '').trim();
+    bar.textContent = '';
+    if (!term || !DATA || DATA.ok === false) { bar.style.display = 'none'; return; }
+    bar.style.display = 'block';
+    bar.appendChild(document.createTextNode('Showing programs matching "' + term + '" \u00b7 '
+      + (resultCount === 1 ? '1 result' : resultCount + ' results') + ' \u00b7 '));
+    bar.appendChild(clearSearchLink());
+  }
+  function noMatchBox() {
+    var none = el('div', 'empty full');
+    none.appendChild(el('b', '', 'No programs match "' + String(view.q || '').trim() + '".'));
+    none.appendChild(clearSearchLink());
+    return none;
+  }
+
+  function staticUsable(j) {
+    if (!j || j.ok === false || !j.builtAt) return false;
+    if (!(j.sessions || j.programs)) return false;
+    return (Date.now() - Number(j.builtAt)) < STATIC.staleMs;
+  }
+
+  function staticFetch(cacheMode, done) {
+    var finished = false;
+    var ctl = window.AbortController ? new window.AbortController() : null;
+    var timer = window.setTimeout(function () {
+      if (ctl) ctl.abort();
+      finish(new Error('timeout'));
+    }, STATIC.timeoutMs);
+    function finish(err, json) {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      done(err, json);
+    }
+    if (!window.fetch) { finish(new Error('no fetch')); return; }
+    var init = { cache: cacheMode, credentials: 'omit' };
+    if (ctl) init.signal = ctl.signal;
+    window.fetch(STATIC.dataUrl, init)
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) { finish(null, j); }, function (e) { finish(e || new Error('fetch')); });
+  }
+
+  /** The same page, from Apps Script, carrying the query string it was asked with. */
+  function fallbackToExec() {
+    if (!STATIC.execUrl) return false;
+    var search = String(window.location.search || '').replace(/^[?]/, '');
+    var url = STATIC.execUrl;
+    if (search) url += (url.indexOf('?') === -1 ? '?' : '&') + search;
+    try { window.location.replace(url); return true; } catch (err) { return false; }
+  }
+
+  function drawLoading() {
+    var list = document.getElementById('list');
+    list.textContent = '';
+    list.appendChild(el('div', 'empty full', 'Loading programs\u2026'));
+    postHeight();
+  }
+
+  function applyPinned() {
+    var wanted = String(PARAMS.location || '').trim().toLowerCase();
+    var known = (DATA && DATA.locations) || [];
+    EMBED.location = '';
+    for (var i = 0; wanted && i < known.length && !EMBED.location; i++) {
+      if (String(known[i]).trim().toLowerCase() === wanted) EMBED.location = known[i];
+    }
+    if (EMBED.location) view.location = EMBED.location;
+  }
+
+  function loadStatic(onReady) {
+    var settled = false;
+    var timer = null;
+    function settle(err, json) {
+      if (settled) return;
+      settled = true;
+      if (timer) window.clearTimeout(timer);
+      if (err || !staticUsable(json)) {
+        if (fallbackToExec()) return;
+        DATA = { ok: false };
+      } else {
+        DATA = json;
+      }
+      LOADING = false;
+      onReady();
+    }
+    timer = window.setTimeout(function () { settle(new Error('timeout')); }, STATIC.timeoutMs);
+    var early = window.__scheduleFetch;
+    if (early) early.then(function (j) { settle(null, j); }, function (e) { settle(e || new Error('fetch')); });
+    else staticFetch('default', settle);
+  }
+
+  /**
+   * THE QUIET RE-READ. 'no-cache' revalidates with the CDN (a 304 when nothing
+   * moved), so the first paint may come from a copy up to ten minutes old and
+   * this is what brings it current. Nothing on screen changes unless builtAt did.
+   */
+  function refreshStatic(force, apply) {
+    var button = document.getElementById('refresh');
+    if (force) button.textContent = 'Refreshing\u2026';
+    staticFetch('no-cache', function (err, res) {
+      button.textContent = 'Refresh';
+      if (err || !staticUsable(res)) return;
+      if (DATA && DATA.builtAt && res.builtAt === DATA.builtAt) return;
+      DATA = res;
+      applyPinned();
+      redrawKeepingPlace(function () { apply(res); });
+    });
+  }
+
+  if (STATIC_MODE) {
+    watchHeight();
+    draw();
+    loadStatic(function () {
+      PROGRAMS = (DATA && DATA.programs) || [];
+      applyPinned();
+      drawIntro();
+      drawLocations();
+      draw();
+      window.setTimeout(function () { refresh(false); }, 400);
+    });
+  } else {
+    drawIntro();
+    drawLocations();
+    draw();
+    watchHeight();
+    window.setTimeout(function () { refresh(false); }, 400);
+  }
+</script>
+</body>
+</html>
